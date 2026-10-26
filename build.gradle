@@ -1,0 +1,179 @@
+plugins {
+    id 'idea'
+    id 'java-library'
+    id 'maven-publish'
+    id 'com.gradleup.shadow' version '8.3.8'
+    id 'net.neoforged.moddev.legacyforge' version '2.0.91'
+}
+
+tasks.named('wrapper', Wrapper) {
+    distributionType = Wrapper.DistributionType.BIN
+}
+
+def releaseStatus = providers.gradleProperty('mod_release_status').orElse('alpha').get().toLowerCase()
+if (!(releaseStatus in ['alpha', 'beta', 'release'])) {
+    throw new GradleException("mod_release_status must be alpha, beta or release, got: ${releaseStatus}")
+}
+def fullVersion = "${mod_version}-${releaseStatus}"
+def rootArtifactName = "[创世魔] WorldEdit++ ${fullVersion}.jar"
+
+version = fullVersion
+group = mod_group_id
+base { archivesName = mod_id }
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.enginehub.org/repo/' }
+}
+
+configurations {
+    commonLayer
+    implementation.extendsFrom commonLayer
+}
+
+// The build plugin is maintained by NeoForged; the runtime and API are MinecraftForge.
+legacyForge {
+    version = "${minecraft_version}-${forge_version}"
+    parchment {
+        mappingsVersion = parchment_mappings_version
+        minecraftVersion = parchment_minecraft_version
+    }
+    runs {
+        client { client() }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+        gameTestServer { type = 'gameTestServer' }
+        data {
+            data()
+            gameDirectory = file('run-data')
+            programArguments.addAll '--mod', mod_id, '--all',
+                    '--output', file('src/generated/resources').absolutePath,
+                    '--existing', file('src/main/resources').absolutePath
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+    mods {
+        "${mod_id}" { sourceSet sourceSets.main }
+    }
+}
+
+dependencies {
+    // The common layer is an included build locally. Each consuming mod relocates
+    // these classes while shading so the resulting mod jar remains self-contained.
+    commonLayer 'com.redawn.common:selection:0.1.0'
+    commonLayer 'com.redawn.common:gizmo:0.1.0'
+    commonLayer 'com.redawn.common:ui:0.1.0'
+    // Development runs need the unrelocated library jars on the launch classpath.
+    additionalRuntimeClasspath 'com.redawn.common:selection:0.1.0'
+    additionalRuntimeClasspath 'com.redawn.common:gizmo:0.1.0'
+    additionalRuntimeClasspath 'com.redawn.common:ui:0.1.0'
+
+    // 7.2.15 is the latest published worldedit-forge-mc1.20 release. Newer
+    // worldedit-core releases (7.2.20+) do not have a matching Forge 1.20 adapter.
+    modImplementation("com.sk89q.worldedit:worldedit-forge-mc1.20:${worldedit_version}") { transitive = false }
+    implementation("com.sk89q.worldedit:worldedit-core:${worldedit_version}") { transitive = false }
+    implementation("com.sk89q.worldedit.worldedit-libs:core:${worldedit_version}") { transitive = false }
+    additionalRuntimeClasspath("com.sk89q.worldedit:worldedit-core:${worldedit_version}") { transitive = false }
+    additionalRuntimeClasspath("com.sk89q.worldedit.worldedit-libs:core:${worldedit_version}") { transitive = false }
+    additionalRuntimeClasspath('org.antlr:antlr4-runtime:4.9.1') { transitive = false }
+    // SnakeYAML 1.33 is affected by CVE-2022-1471; 2.x is the fixed line.
+    additionalRuntimeClasspath('org.yaml:snakeyaml:2.4') { transitive = false }
+    // 1.7.13 is affected by CVE-2025-66453; 1.7.15.1 contains the fix.
+    additionalRuntimeClasspath('org.mozilla:rhino-runtime:1.7.15.1') { transitive = false }
+    additionalRuntimeClasspath('com.sk89q:jchronic:0.2.4a') { transitive = false }
+    additionalRuntimeClasspath('com.sk89q.lib:jlibnoise:1.0.0') { transitive = false }
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+mixin {
+    add sourceSets.main, 'worldeditpp.refmap.json'
+    config 'worldeditpp.mixins.json'
+    config 'worldeditpp.worldedit.mixins.json'
+}
+tasks.named('jar', Jar) {
+    manifest.attributes('MixinConfigs': 'worldeditpp.mixins.json,worldeditpp.worldedit.mixins.json')
+}
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll(['-Xmaxerrs', '500'])
+}
+
+sourceSets.main.resources.srcDir 'src/generated/resources'
+
+// Optional development dependencies use localRuntime/modLocalRuntime, not runtimeOnly.
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+shadowJar {
+    archiveClassifier = 'all'
+    configurations = [project.configurations.commonLayer]
+    relocate 'com.redawn.common', 'com.redawn.worldeditpp.common'
+    mergeServiceFiles()
+    // The Mixin annotation processor writes the production refmap outside the
+    // normal resource output; the shaded release jar must carry it explicitly.
+    from(layout.buildDirectory.dir('mixin')) {
+        include '*.refmap.json'
+    }
+    manifest.inheritFrom(tasks.named('jar').get().manifest)
+}
+def reobfShadowJar = obfuscation.reobfuscate(tasks.named('shadowJar'), sourceSets.main)
+obfuscation {
+    createRemappingConfiguration(configurations.localRuntime)
+}
+
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def replaceProperties = [
+            minecraft_version: minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version,
+            forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: mod_license,
+            mod_version: fullVersion,
+            mod_authors: mod_authors,
+            mod_description: mod_description
+    ]
+    inputs.properties replaceProperties
+    filteringCharset = 'UTF-8'
+    expand replaceProperties
+    from 'src/main/templates'
+    into layout.buildDirectory.dir('generated/sources/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+legacyForge.ideSyncTask generateModMetadata
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) { from components.java }
+    }
+    repositories {
+        maven { url = layout.projectDirectory.dir('repo').asFile.toURI() }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
+
+// Keep the latest release artifact in the project root. The staged jar remains in
+// build/libs; this task only replaces the user-facing copy.
+reobfShadowJar.configure {
+    archiveFileName = rootArtifactName
+    destinationDirectory = layout.projectDirectory
+}
+tasks.named('build') { dependsOn reobfShadowJar }
+
+apply from: 'gradle/testing.gradle'

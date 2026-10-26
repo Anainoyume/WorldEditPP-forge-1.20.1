@@ -1,0 +1,21 @@
+WorldEdit++ (创世魔)
+Copyright (C) 2026 qjklw with AI
+
+This project is licensed under the GNU General Public License, version 3,
+or (at your option) any later version. See LICENSE for the full license text.
+
+WorldEdit is a separate project. It was created by sk89q and is maintained
+by EngineHub's WorldEdit Team. WorldEdit is licensed under the GNU General
+Public License, version 3, or (at your option) any later version. This module
+does not bundle WorldEdit; users install WorldEdit separately.
+
+WorldEdit project:
+https://github.com/EngineHub/WorldEdit
+
+WorldEdit documentation and team information:
+https://worldedit.enginehub.org/
+https://enginehub.org/
+
+The MIT-licensed template files supplied by the NeoForged MDK are covered by
+TEMPLATE_LICENSE.txt; that template license does not replace this project's
+GPL license for WorldEdit++ source code.

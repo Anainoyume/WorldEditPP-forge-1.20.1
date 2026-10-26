@@ -1,0 +1,57 @@
+# eclipse
+bin/
+*.launch
+.settings/
+.metadata/
+.classpath
+.project
+
+# idea
+out/
+*.ipr
+*.iws
+*.iml
+.idea/
+
+# gradle/build outputs
+build/
+**/build/
+.gradle/
+**/.gradle/
+.cache/
+tmp/
+temp/
+.tmp/
+
+# run and local dependency directories
+run/
+runs/
+run-data/
+repo/
+libs/
+mods/
+dependencies/
+
+# binary outputs and local dependency jars
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.zip
+*.log
+*.bin
+**/worldedit-*.jar
+**/forge-*.jar
+**/minecraft-*.jar
+
+# local agent notes, iteration/experiment archives (never publish)
+AGENT.md
+AGENTS/
+AGENTS.md
+common/AGENT.md
+common/AGENTS/
+common/README.md
+docs/
+
+# generated root release artifact (build task replaces it)
+/*.jar
+AGENTS.md

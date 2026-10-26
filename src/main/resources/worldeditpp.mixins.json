@@ -1,0 +1,24 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "refmap": "worldeditpp.refmap.json",
+  "package": "com.redawn.worldeditpp.bridge.minecraft.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "BlockItemStoredStatePlacementMixin",
+    "PlayerDataStorageAccessibilitySaveMixin",
+    "PlayerNoPhysicsMixin"
+  ],
+  "client": [
+    "client.BufferBuilderStorageMixin",
+    "client.ItemRendererBlockStateMixin",
+    "client.KeyMappingInterceptMixin",
+    "client.LevelRendererEditModeCullingMixin",
+    "client.LightTextureGammaMixin",
+    "client.MinecraftPickBlockStateMixin",
+    "client.ScreenWelcomeLinkMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

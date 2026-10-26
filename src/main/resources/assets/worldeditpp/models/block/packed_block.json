@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "side": "worldeditpp:block/packed_block_side",
+    "top": "worldeditpp:block/packed_block_top",
+    "bottom": "worldeditpp:block/packed_block_bottom"
+  }
+}

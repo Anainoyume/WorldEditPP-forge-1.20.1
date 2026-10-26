@@ -1,0 +1,12 @@
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+includeBuild('common') {
+    dependencySubstitution {
+        substitute module('com.redawn.common:selection') using project(':selection')
+        substitute module('com.redawn.common:gizmo') using project(':gizmo')
+        substitute module('com.redawn.common:ui') using project(':ui')
+        substitute module('com.redawn.common:test') using project(':test')
+    }
+}

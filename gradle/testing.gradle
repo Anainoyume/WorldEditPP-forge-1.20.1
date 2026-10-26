@@ -1,0 +1,285 @@
+// Test-only mod: never added to main or the release jar.
+sourceSets {
+    testHarness {
+        // Test-only common sources are compiled into the test mod. They are never part
+        // of the production source set or the release jar.
+        java.srcDir file('common/test/src/main/java')
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations.testHarnessImplementation.extendsFrom configurations.implementation
+configurations.testHarnessRuntimeOnly.extendsFrom configurations.runtimeOnly
+configurations.testHarnessRuntimeClasspath.extendsFrom configurations.localRuntime
+dependencies {
+    testHarnessCompileOnly 'net.java.dev.jna:jna-platform:5.14.0'
+}
+legacyForge.addModdingDependenciesTo(sourceSets.testHarness)
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation sourceSets.testHarness.output
+}
+tasks.named('test', Test) {
+    useJUnitPlatform { excludeTags 'history-stress' }
+    testLogging { events 'passed', 'skipped', 'failed' }
+}
+
+tasks.register('historyPlannerStress', Test) {
+    group = 'verification'
+    description = 'Runs production history planning under a 256 MiB heap with timing and memory sampling.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'history-stress' }
+    maxHeapSize = '256m'
+    maxParallelForks = 1
+    outputs.upToDateWhen { false }
+    timeout = java.time.Duration.ofMinutes(4)
+    testLogging { events 'passed', 'failed', 'standardOut' }
+}
+
+tasks.register('historyJfrReport', JavaExec) {
+    group = 'verification'
+    description = 'Aggregates the real-client history JFR into bounded-memory attribution tables.'
+    dependsOn 'testHarnessClasses'
+    mustRunAfter 'clientSmokeTest', 'runClientSmoke'
+    classpath = sourceSets.testHarness.runtimeClasspath
+    mainClass = 'dev.worldeditpp.testing.HistoryJfrReport'
+    def label = providers.gradleProperty('historyProfileLabel').orElse('').get()
+    if (!(label ==~ /[A-Za-z0-9_-]*/)) throw new GradleException('Invalid historyProfileLabel')
+    args layout.buildDirectory.dir('test-results/clientSmoke' + (label ? '/' + label : '')).get().asFile.absolutePath
+    jvmArgs '-Xmx256m'
+}
+
+def reportDir = layout.buildDirectory.dir('test-results/gameTest')
+def clientReportDir = layout.buildDirectory.dir('test-results/clientSmoke')
+def clientOptions = layout.projectDirectory.file('run/client-smoke/options.txt')
+def expectedMod = project.mod_id.toString()
+def failureProbe = providers.gradleProperty('testFailureProbe').orElse('false')
+def fullStress = providers.gradleProperty('fullStress').orElse('false')
+def buildingStress = providers.gradleProperty('buildingStress').orElse('false')
+def playerStress = providers.gradleProperty('playerStress').orElse('false')
+if (buildingStress.get().toBoolean() && !fullStress.get().toBoolean())
+    throw new GradleException('buildingStress requires -PfullStress=true')
+def fullStressLabel = providers.gradleProperty('fullStressLabel').orElse('baseline')
+def playerStressLabel = providers.gradleProperty('playerStressLabel').orElse('player')
+
+legacyForge {
+    mods {
+        worldeditpp_test { sourceSet sourceSets.testHarness }
+    }
+    runs {
+        configureEach { loadedMods = [mods[expectedMod]] }
+        gameTestServer {
+            logLevel = org.slf4j.event.Level.INFO
+            sourceSet = sourceSets.testHarness
+            loadedMods = [mods[expectedMod], mods.worldeditpp_test]
+            gameDirectory = file('run/gametest')
+            systemProperty 'forge.enabledGameTestNamespaces', 'worldeditpp_test'
+            systemProperty 'worldeditpp.test.expectedMod', expectedMod
+            systemProperty 'worldeditpp.test.report', reportDir.get().file('gametest.xml').asFile.absolutePath
+            systemProperty 'worldeditpp.test.fail', failureProbe.get()
+        }
+        clientSmoke {
+            client()
+            logLevel = org.slf4j.event.Level.INFO
+            sourceSet = sourceSets.testHarness
+            loadedMods = [mods[expectedMod], mods.worldeditpp_test]
+            gameDirectory = file('run/client-smoke')
+            systemProperty 'worldeditpp.test.client', 'true'
+            systemProperty 'worldeditpp.test.historyProfile', providers.gradleProperty('historyProfile').orElse('false').get()
+            systemProperty 'worldeditpp.test.historyProfileLabel', providers.gradleProperty('historyProfileLabel').orElse('').get()
+            systemProperty 'worldeditpp.test.fullStress', fullStress.get()
+            systemProperty 'worldeditpp.test.buildingStress', buildingStress.get()
+            systemProperty 'worldeditpp.test.chestStress', providers.gradleProperty('chestStress').orElse('false').get()
+            systemProperty 'worldeditpp.test.containerStress', providers.gradleProperty('containerStress').orElse('false').get()
+            systemProperty 'worldeditpp.test.millionSet', providers.gradleProperty('millionSet').orElse('false').get()
+            systemProperty 'worldeditpp.test.playerStress', playerStress.get()
+            systemProperty 'worldeditpp.test.renderAudit', providers.gradleProperty('renderAudit').orElse('false').get()
+            systemProperty 'worldeditpp.test.bannerAudit', providers.gradleProperty('bannerAudit').orElse('false').get()
+            systemProperty 'worldeditpp.test.mixed2600k', providers.gradleProperty('mixed2600k').orElse('false').get()
+            systemProperty 'worldeditpp.test.auditHalfResolution', providers.gradleProperty('auditHalfResolution').orElse('false').get()
+            systemProperty 'worldeditpp.test.renderAuditLabel', providers.gradleProperty('renderAuditLabel').orElse('audit').get()
+            systemProperty 'worldeditpp.test.renderAuditStrict', providers.gradleProperty('renderAuditStrict').orElse('false').get()
+            systemProperty 'worldeditpp.test.renderAuditQueries', providers.gradleProperty('renderAuditQueries').orElse('true').get()
+            systemProperty 'worldeditpp.test.playerStressLabel', playerStressLabel.get()
+            systemProperty 'worldeditpp.test.renderLegacy', providers.gradleProperty('renderLegacy').orElse('false').get()
+            systemProperty 'worldeditpp.test.playerSizes', providers.gradleProperty('playerSizes').orElse('').get()
+            systemProperty 'worldeditpp.test.playerScenarios', providers.gradleProperty('playerScenarios').orElse('').get()
+            systemProperty 'worldeditpp.test.fullStressLabel', fullStressLabel.get()
+            systemProperty 'worldeditpp.test.expectedMod', expectedMod
+            systemProperty 'worldeditpp.test.report', clientReportDir.get().file('client-smoke.xml').asFile.absolutePath
+            systemProperty 'worldeditpp.test.fail', failureProbe.get()
+            systemProperty 'worldeditpp.test.glassProbe', providers.gradleProperty('glassProbe').orElse('false').get()
+            systemProperty 'worldeditpp.test.cloudProbe', providers.gradleProperty('cloudProbe').orElse('false').get()
+            systemProperty 'worldeditpp.test.helpProbe', providers.gradleProperty('helpProbe').orElse('false').get()
+            programArguments.addAll '--username', 'WEPPTester', '--width', '960', '--height', '540'
+            if (fullStress.get().toBoolean() || playerStress.get().toBoolean() || providers.gradleProperty('renderAudit').orElse('false').get().toBoolean()) jvmArgument '-Xmx8G'
+            if (playerStress.get().toBoolean()) jvmArgument '-Djava.awt.headless=false'
+        }
+    }
+}
+
+// Tiny, deterministic structure; generated as compressed NBT, not a downloaded fixture.
+def generateTestStructure = tasks.register('generateTestStructure') {
+    def output = layout.buildDirectory.file('generated/testHarness/data/worldeditpp_test/structures/empty.nbt')
+    outputs.file(output)
+    doLast {
+        def target = output.get().asFile
+        target.parentFile.mkdirs()
+        new DataOutputStream(new java.util.zip.GZIPOutputStream(new FileOutputStream(target))).withCloseable { out ->
+            out.writeByte(10); out.writeUTF('')
+            out.writeByte(3); out.writeUTF('DataVersion'); out.writeInt(3465)
+            out.writeByte(9); out.writeUTF('size'); out.writeByte(3); out.writeInt(3)
+            [5, 5, 5].each { out.writeInt(it) }
+            ['entities', 'blocks'].each {
+                out.writeByte(9); out.writeUTF(it); out.writeByte(10); out.writeInt(0)
+            }
+            out.writeByte(9); out.writeUTF('palette'); out.writeByte(10); out.writeInt(1)
+            out.writeByte(8); out.writeUTF('Name'); out.writeUTF('minecraft:air'); out.writeByte(0)
+            out.writeByte(0)
+        }
+    }
+}
+sourceSets.testHarness.resources.srcDir(layout.buildDirectory.dir('generated/testHarness'))
+tasks.named('processTestHarnessResources') { dependsOn generateTestStructure }
+
+tasks.named('runGameTestServer') {
+    timeout = java.time.Duration.ofMinutes(5)
+    doFirst {
+        def report = reportDir.get().file('gametest.xml').asFile
+        report.parentFile.mkdirs()
+        if (report.exists() && !report.delete()) throw new GradleException("Cannot clear ${report}")
+        def business = reportDir.get().file('business.xml').asFile
+        if (business.exists() && !business.delete()) throw new GradleException("Cannot clear ${business}")
+    }
+}
+tasks.named('runClientSmoke') {
+    timeout = java.time.Duration.ofMinutes(playerStress.get().toBoolean() ? 30 : fullStress.get().toBoolean() ? 20 : 6)
+    doFirst {
+        def report = clientReportDir.get().file('client-smoke.xml').asFile
+        report.parentFile.mkdirs()
+        if (report.exists() && !report.delete()) throw new GradleException("Cannot clear ${report}")
+        // Isolated game directory only. Skip first-launch accessibility dialog.
+        ['client-smoke.png', 'projection.png', 'block-state-editor.png', 'tutorial.png', 'mod-configuration.png',
+         'projection-world-0.png', 'projection-world-1.png', 'projection-world-2.png',
+           'projection-only-0.png', 'projection-only-1.png', 'projection-only-2.png',
+           'building-projection-0.png', 'building-projection-1.png', 'building-projection-2.png',
+           'building-front-without-entities.png', 'building-occlusion.txt', 'building-drops.txt',
+           'building-without-entities-0.png', 'building-without-entities-2.png',
+           'building-occlusion-0.txt', 'building-occlusion-2.txt', 'building-alpha.txt', 'building-white-background.png',
+           'building-render-samples.txt', 'chest-drops.txt', 'chest-history.txt'].each { name ->
+            def screenshot = clientReportDir.get().file(name).asFile
+            if (screenshot.exists() && !screenshot.delete()) throw new GradleException("Cannot clear ${screenshot}")
+        }
+        def options = clientOptions.asFile
+        options.parentFile.mkdirs()
+        if (!options.exists()) options.text = 'onboardAccessibility:false\n'
+    }
+}
+
+// Missing/empty reports are failures, including early normal exits before any test ran.
+def verifyXml = { File report ->
+    if (!report.isFile()) throw new GradleException("Missing test report: ${report}")
+    def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+    factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+    def xml = factory.newDocumentBuilder().parse(report)
+    if (xml.getElementsByTagName('testcase').length == 0 ||
+        xml.getElementsByTagName('failure').length > 0 ||
+        xml.getElementsByTagName('error').length > 0 ||
+        xml.getElementsByTagName('skipped').length > 0) {
+        throw new GradleException("Empty, skipped or failed test run: ${report}")
+    }
+}
+tasks.register('serverSimulationTest') {
+    group = 'verification'
+    description = 'Runs real Minecraft GameTests with simulated players and verifies the report.'
+    dependsOn 'runGameTestServer'
+    doLast {
+        verifyXml(reportDir.get().file('gametest.xml').asFile)
+        verifyXml(reportDir.get().file('business.xml').asFile)
+    }
+}
+tasks.register('clientSmokeTest') {
+    group = 'verification'
+    description = 'Starts a real client, creates a world, checks chat loopback, and exits.'
+    dependsOn 'runClientSmoke'
+    doLast {
+        verifyXml(clientReportDir.get().file('client-smoke.xml').asFile)
+    }
+}
+
+tasks.register('verifyTestIsolation') {
+    group = 'verification'
+    description = 'Checks both development and remapped release jars for test leakage.'
+    dependsOn 'jar', 'reobfJar', 'testClasses', 'renderTestClasses'
+    def jars = files(tasks.named('jar', Jar).flatMap { it.archiveFile }, tasks.named('reobfJar').map { it.outputs.files })
+    def testClasses = files(sourceSets.test.output.classesDirs, sourceSets.testHarness.output.classesDirs,
+            providers.provider { sourceSets.renderTest.output.classesDirs })
+    inputs.files(jars, testClasses)
+    doLast {
+        def forbiddenClasses = new HashSet<String>()
+        testClasses.files.each { root ->
+            if (root.isDirectory()) root.eachFileRecurse { entry ->
+                if (entry.isFile()) forbiddenClasses.add(root.toPath().relativize(entry.toPath()).toString().replace('\\', '/'))
+            }
+        }
+        jars.files.each { artifact ->
+            new java.util.zip.ZipFile(artifact).withCloseable { zip ->
+                def leaked = zip.entries().toList().findAll {
+                    it.name.contains('worldeditpp_test') || it.name.startsWith('dev/worldeditpp/testing/') ||
+                            it.name.startsWith('com/redawn/worldeditpp/gametest/') ||
+                            it.name.startsWith('org/junit/') || forbiddenClasses.contains(it.name)
+                }
+                def metadata = zip.getEntry('META-INF/mods.toml')
+                if (!leaked.isEmpty() || metadata == null ||
+                        zip.getInputStream(metadata).withCloseable { it.getText('UTF-8').contains('worldeditpp_test') }) {
+                    throw new GradleException("Test leakage or invalid metadata in ${artifact}: ${leaked}")
+                }
+            }
+        }
+    }
+}
+tasks.named('check') { dependsOn 'verifyTestIsolation' }
+
+tasks.register('compileCoreBoundary', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles portable logic with only JOML and SLF4J available.'
+    source = files(fileTree('src/main/java') { exclude 'com/redawn/worldeditpp/bridge/**' },
+            fileTree('src/main/java/com/redawn/worldeditpp/bridge/api'))
+    classpath = configurations.compileClasspath.filter {
+        it.name.startsWith('joml-') || it.name.startsWith('slf4j-api-')
+    }
+    destinationDirectory = layout.buildDirectory.dir('core-boundary/classes')
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) }
+    options.release = 17
+}
+tasks.named('check') { dependsOn 'compileCoreBoundary' }
+
+sourceSets {
+    renderTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+configurations.renderTestImplementation.extendsFrom configurations.testImplementation
+configurations.renderTestRuntimeOnly.extendsFrom configurations.testRuntimeOnly
+tasks.register('renderTest', Test) {
+    group = 'verification'
+    description = 'Runs projection and tutorial regression with a hidden OpenGL context.'
+    workingDir = layout.buildDirectory.get().asFile
+    testClassesDirs = sourceSets.renderTest.output.classesDirs
+    classpath = sourceSets.renderTest.runtimeClasspath
+    useJUnitPlatform()
+    include '**/*RenderTest.class'
+}
+
+tasks.register('extractMinecraftSources', Sync) {
+    group = 'documentation'
+    description = 'Extracts exact-version decompiled Minecraft/Forge sources for local inspection.'
+    dependsOn 'createMinecraftArtifacts'
+    from(zipTree(layout.buildDirectory.file("moddev/artifacts/forge-${minecraft_version}-${forge_version}-sources.jar")))
+    into(layout.buildDirectory.dir('audit/minecraft'))
+}

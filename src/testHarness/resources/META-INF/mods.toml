@@ -1,0 +1,16 @@
+modLoader="javafml"
+loaderVersion="[47,48)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="worldeditpp_test"
+version="1.0.0"
+displayName="WorldEditPP Development Tests"
+description='''Development-only test harness. Never distribute with the production mod.'''
+
+[[dependencies.worldeditpp_test]]
+modId="worldeditpp"
+mandatory=true
+versionRange="[1.0.0,)"
+ordering="AFTER"
+side="BOTH"
